@@ -1,8 +1,10 @@
 # Provenance and publication status
 
 Repository maintainer identity comes from the existing local Git configuration:
-Abir Ahmmed (`devbyabir`). This does not establish sole authorship of the legacy
-project. A collaborator's name and contribution are awaiting confirmation.
+Abir Ahmmed (`devbyabir`). The maintainer has requested project credit under this
+name and confirmed publication permission on 2026-11-12. This declaration is
+recorded from the maintainer; it is not independent verification of historical
+sole authorship. Upstream attribution remains separate from project credit.
 
 ## Original experiments
 
@@ -14,8 +16,9 @@ credit or claim that upstream implementations were authored here.
 
 ## Data
 
-Original data publication rights, patient identity handling, and hospital
-permission are unverified. No original images, report CSVs, screenshots, Drive
+The maintainer confirms hospital publication permission. Patient identity
+handling and dataset-specific redistribution terms still need documentation.
+No original images, report CSVs, screenshots, Drive
 identifiers, or model files are committed here.
 
 A training dataset requires a source URL, access/license terms, explicit group

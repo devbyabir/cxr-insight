@@ -129,5 +129,46 @@ class ReportModelLoaderTests(unittest.TestCase):
             self.assertEqual(adapted.adapter_path, tmp)
 
 
+class FakeParam:
+    def __init__(self, total):
+        self.total = total
+
+    def detach(self):
+        return self
+
+    def abs(self):
+        return self
+
+    def sum(self):
+        return self.total
+
+
+class FakeModel:
+    def __init__(self, params):
+        self.params = params
+
+    def named_parameters(self):
+        return iter(self.params)
+
+
+class AdapterVerificationTests(unittest.TestCase):
+    def test_trained_adapter_passes(self):
+        from cxr_insight.models import verify_trained_adapter
+        model = FakeModel([("q.lora_A.default.weight", FakeParam(3.0)),
+                           ("q.lora_B.default.weight", FakeParam(0.2)),
+                           ("v.lora_B.default.weight", FakeParam(0.0))])
+        self.assertEqual(verify_trained_adapter(model),
+                         {"lora_A_tensors": 1, "lora_B_tensors": 2, "nonzero_lora_B_tensors": 1})
+
+    def test_fresh_or_missing_adapter_rejected(self):
+        from cxr_insight.models import verify_trained_adapter
+        fresh = FakeModel([("q.lora_A.default.weight", FakeParam(3.0)),
+                           ("q.lora_B.default.weight", FakeParam(0.0))])
+        with self.assertRaisesRegex(RuntimeError, "untrained"):
+            verify_trained_adapter(fresh)
+        with self.assertRaisesRegex(RuntimeError, "not loaded"):
+            verify_trained_adapter(FakeModel([("dense.weight", FakeParam(1.0))]))
+
+
 if __name__ == "__main__":
     unittest.main()

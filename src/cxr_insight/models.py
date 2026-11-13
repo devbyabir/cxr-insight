@@ -127,6 +127,27 @@ def load_report_model(model_id, revision=None, adapter_path=None, load_in_4bit=T
                        str(adapter_path) if adapter_path else None)
 
 
+def verify_trained_adapter(model):
+    """Confirm LoRA weights are present *and trained*; return a summary.
+
+    A freshly initialised LoRA adapter has every ``lora_B`` matrix equal to zero
+    (so it changes nothing). Training makes them non-zero. Raises if the model
+    has no LoRA parameters or all ``lora_B`` weights are still zero.
+    """
+    lora_a = lora_b = nonzero_b = 0
+    for name, param in model.named_parameters():
+        if "lora_A" in name:
+            lora_a += 1
+        elif "lora_B" in name:
+            lora_b += 1
+            nonzero_b += float(param.detach().abs().sum()) > 0
+    if lora_b == 0:
+        raise RuntimeError("No LoRA parameters found: the adapter was not loaded")
+    if nonzero_b == 0:
+        raise RuntimeError("All lora_B weights are zero: this adapter is untrained")
+    return {"lora_A_tensors": lora_a, "lora_B_tensors": lora_b, "nonzero_lora_B_tensors": nonzero_b}
+
+
 def load_report_model_from_config(model_config, load_in_4bit=True):
     return load_report_model(model_config.base_model_id, model_config.revision,
                              model_config.adapter_path, load_in_4bit)

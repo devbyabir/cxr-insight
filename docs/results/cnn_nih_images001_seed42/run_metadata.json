@@ -1,0 +1,80 @@
+{
+  "created_utc": "2026-11-13T18:24:55+00:00",
+  "python": "3.14.7",
+  "platform": "Windows-11-10.0.26300-SP0",
+  "git": {
+    "commit": "3a08e0b3acffc43e5f83bb7b3dbc0019ae972f1a",
+    "dirty": true
+  },
+  "packages": {
+    "torch": "2.15.0+cpu",
+    "torchvision": "0.29.2+cpu",
+    "numpy": "2.5.4",
+    "pillow": "13.0.0",
+    "streamlit": "1.67.0"
+  },
+  "seed": 42,
+  "task": "multi-label (14 NIH findings; 'No Finding' = all zeros)",
+  "architecture": "torchvision efficientnet_b0, ImageNet-1k weights",
+  "device": "cpu",
+  "args": {
+    "splits": "data\\splits\\nih_images001_seed42",
+    "image_dir": "data\\raw\\nih\\images_001",
+    "out": "runs\\cnn_nih_images001_seed42",
+    "epochs": "6",
+    "batch_size": "32",
+    "lr": "0.0003",
+    "weight_decay": "0.0001",
+    "seed": "42",
+    "workers": "4",
+    "no_pretrained": "False"
+  },
+  "data": {
+    "dataset": "NIH ChestX-ray14",
+    "source": "https://nihcc.app.box.com/v/ChestXray-NIHCC",
+    "subset": true,
+    "images_used": 4999,
+    "seed": 42,
+    "data_entry_sha256": "dc1d2df67fdc1c5a7601d48699cda2b13dc2c4841488b4183dcf04884dbaca11",
+    "test_list_sha256": "38ca5ef7f756092946f57c1a59faca882ed589a1ab1f72590b45dc06c6d5e1cc",
+    "split_sha256": {
+      "train": "92e72d7cff9c774960cb6cc07a615587682bf1545deeec30b452a1e0188c2d2e",
+      "validation": "39ca679b9ed438af35b89803c020bd115cdc79e393170f05fd0014ac232d9e0f",
+      "test": "ad926590d0617c042c850178be1cf76860df6b7baa6dba98316a0f16d4c0b686"
+    }
+  },
+  "history": [
+    {
+      "epoch": 1,
+      "train_loss": 0.3391268006798894,
+      "val_macro_auroc": 0.6775179303278527
+    },
+    {
+      "epoch": 2,
+      "train_loss": 0.14358247052601109,
+      "val_macro_auroc": 0.7009660592325606
+    },
+    {
+      "epoch": 3,
+      "train_loss": 0.13266047849690613,
+      "val_macro_auroc": 0.7222968639314473
+    },
+    {
+      "epoch": 4,
+      "train_loss": 0.12313817510124406,
+      "val_macro_auroc": 0.6982818505847791
+    },
+    {
+      "epoch": 5,
+      "train_loss": 0.11454263954407344,
+      "val_macro_auroc": 0.7195906102984527
+    },
+    {
+      "epoch": 6,
+      "train_loss": 0.10944278817433732,
+      "val_macro_auroc": 0.718059284029091
+    }
+  ],
+  "best_val_macro_auroc": 0.7222968639314473,
+  "thresholds_fitted_on": "validation"
+}

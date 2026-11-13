@@ -32,3 +32,35 @@ Legacy saved metrics are not accepted as benchmarks. The original merged CSV
 contained 1,300 rows but only 300 distinct image paths and 1,000 exact duplicate
 rows. The old evaluation reused training examples; a ROC legend altered AUC
 values with random subtraction. New results must be recomputed independently.
+
+## Known defects in the legacy report-generation work
+
+Found on 2026-11-14 by inspecting the parent workspace's `LLM Report/` notebooks
+and `fine_tuning_dataset-1300-merged - fine_tuning.csv` (1,300 rows; columns
+`img_path`, `instructions`, `reports`). Counts were computed directly from that
+file; neither the file nor the notebooks are committed here.
+
+1. **Legacy inference never used fine-tuned weights.** Every `Inference - ...`
+   notebook (Llama 3.2 11B, Qwen3-VL 8B, Ministral 3B; EfficientNet and ResNet50
+   variants) loads the base model and then calls `FastVisionModel.get_peft_model`,
+   which attaches a freshly initialised LoRA adapter. No trained adapter is
+   loaded, so legacy "fine-tuned" outputs are base-model outputs and must not be
+   presented as fine-tuning results. `models.load_report_model` loads a trained
+   adapter directory instead and never attaches a fresh one.
+2. **Every training target contains a chat-role artefact.** All 1,300 `reports`
+   values begin with `user\n\nassistant\n\n`, left over from decoding the
+   generating model's full output. A model trained on them learns to emit it.
+   `inference.parse_report` strips it, but the data should be regenerated.
+3. **Most training targets copy the prompt's example report.** 954 of 1,300
+   reports (73%) contain phrases from the prompt's example — "multiple clips",
+   "left breast", "rib fractures" — regardless of the image or labelled finding.
+   The synthetic targets therefore teach template copying, not image findings.
+   `inference.parse_report` reports these phrases as `leaked_example_phrases`.
+
+Consequences: the legacy dataset is unsuitable for fine-tuning as is, and no
+legacy generated report is evidence of model quality. Before fine-tuning, the
+targets must be regenerated without the example leak and the role artefact (or
+replaced with clinician-authored reports), re-labelled `report_source`, and
+re-audited with the same counts. The 15 `instructions` values are byte-identical
+to `inference.LEGACY_INSTRUCTION_TEMPLATE`; changing that prompt requires
+retraining any adapter built on it.

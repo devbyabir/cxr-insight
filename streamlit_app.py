@@ -100,10 +100,10 @@ with left:
     if show_cam:
         with st.spinner("Computing Grad-CAM…"):
             cam = grad_cam(model, image, labels.index(choice))
-        st.image(overlay(image, cam), use_container_width=True,
+        st.image(overlay(image, cam), width="stretch",
                  caption=f"Grad-CAM: {choice}")
     else:
-        st.image(image, use_container_width=True)
+        st.image(image, width="stretch")
 
 with right:
     st.subheader("Classifier scores")
@@ -111,7 +111,7 @@ with right:
         [{"Finding": labels[i].replace("_", " "), "Score": round(probabilities[i], 3),
           "Threshold": round(thresholds[i], 3),
           "Flagged": "yes" if probabilities[i] >= thresholds[i] else ""} for i in ranked],
-        hide_index=True, use_container_width=True)
+        hide_index=True, width="stretch")
     st.caption("Scores are independent per finding (sigmoid), so they need not sum to 1.")
     st.subheader("Draft report")
     st.text(draft_report(probabilities, labels, thresholds))

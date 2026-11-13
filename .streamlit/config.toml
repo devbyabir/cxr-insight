@@ -1,0 +1,6 @@
+[server]
+# Matches the app's own 10 MB check, so the widget states the real limit.
+maxUploadSize = 10
+
+[browser]
+gatherUsageStats = false

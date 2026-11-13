@@ -1,0 +1,25 @@
+# Report-generation (VLM) settings read by notebooks/finetune_vlm_colab.ipynb.
+# Paths are relative to this file. Report data is not included in the repository
+# and must have documented provenance (see docs/PROVENANCE.md).
+name = "qwen2vl-2b-lora-reports"
+
+[data]
+manifest = "../data/report_data/train.jsonl"
+image_root = "../data/report_data"
+output_dir = "../runs/vlm_seed3407"
+seed = 3407
+validation = 0.15
+test = 0.15
+
+[model]
+base_model_id = "unsloth/Qwen2-VL-2B-Instruct"
+# revision = "<pin a commit hash before any reported run>"
+
+[training]
+learning_rate = 2e-4
+batch_size = 2
+gradient_accumulation_steps = 4
+max_seq_length = 2048
+lora_r = 16
+lora_alpha = 16
+seed = 3407

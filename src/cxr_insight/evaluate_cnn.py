@@ -34,7 +34,8 @@ def plot(report, y, s, out):
     macro = report["macro_auroc"]
     ax.set(xlabel="False positive rate", ylabel="True positive rate",
            title="Test ROC (macro AUROC " + (f"{macro:.3f})" if macro is not None else "undefined)"))
-    ax.legend(fontsize=7, loc="lower right")
+    if macro is not None:
+        ax.legend(fontsize=7, loc="lower right")
     fig.tight_layout()
     fig.savefig(out / "roc.png", dpi=150)
     plt.close(fig)

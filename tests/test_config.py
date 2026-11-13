@@ -6,7 +6,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
-from cxr_insight.config import config_from_dict, load_config
+from cxr_insight.config import config_from_dict, load_cnn_config, load_config
 
 
 def minimal():
@@ -16,11 +16,36 @@ def minimal():
 
 
 class ConfigTests(unittest.TestCase):
-    def test_example_config_loads(self):
-        cfg = load_config(ROOT / "configs" / "example.toml")
-        self.assertEqual(cfg.data.manifest, (ROOT / "data" / "manifest.csv").resolve())
+    def test_vlm_config_loads(self):
+        cfg = load_config(ROOT / "configs" / "vlm_qwen2vl_2b.toml")
+        self.assertEqual(cfg.model.base_model_id, "unsloth/Qwen2-VL-2B-Instruct")
         self.assertEqual(cfg.training.lora_r, 16)
         self.assertIsNone(cfg.model.revision)
+
+    def test_cnn_run_config_matches_reported_run(self):
+        cfg = load_cnn_config(ROOT / "configs" / "cnn_nih_images001.toml")
+        self.assertEqual(cfg.splits, (ROOT / "data" / "splits" / "nih_images001_seed42").resolve())
+        meta = json.loads((ROOT / "docs" / "results" / "cnn_nih_images001_seed42" /
+                           "run_metadata.json").read_text(encoding="utf-8"))["args"]
+        self.assertEqual((str(cfg.epochs), str(cfg.batch_size), str(cfg.lr), str(cfg.weight_decay),
+                          str(cfg.seed), str(cfg.workers), str(not cfg.pretrained)),
+                         (meta["epochs"], meta["batch_size"], meta["lr"], meta["weight_decay"],
+                          meta["seed"], meta["workers"], meta["no_pretrained"]))
+
+    def test_cnn_config_validation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "c.toml"
+            good = 'name = "x"\n[cnn]\nsplits = "s"\nimage_dir = "i"\nout = "o"\n'
+            path.write_text(good, encoding="utf-8")
+            self.assertEqual(load_cnn_config(path).out, (Path(tmp) / "o").resolve())
+            for extra in ("epochs = 0", "lr = 0", "pretrained = 1", "batch_size = 2.5", "typo = 1"):
+                with self.subTest(extra=extra):
+                    path.write_text(good + extra + "\n", encoding="utf-8")
+                    with self.assertRaises(ValueError):
+                        load_cnn_config(path)
+            path.write_text('name = "x"\n', encoding="utf-8")
+            with self.assertRaises(ValueError):
+                load_cnn_config(path)
 
     def test_defaults_and_relative_paths(self):
         with tempfile.TemporaryDirectory() as tmp:

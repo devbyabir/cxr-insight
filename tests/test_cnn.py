@@ -110,6 +110,23 @@ class CnnTests(unittest.TestCase):
             plot(report, y, s, Path(tmp))
             self.assertTrue((Path(tmp) / "roc.png").exists())
 
+    def test_training_from_config_with_flag_override(self):
+        from cxr_insight import train_cnn
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            images, splits = write_split_dir(root)
+            config = root / "cnn.toml"
+            config.write_text('name = "t"\n[cnn]\nsplits = "splits"\nimage_dir = "images"\n'
+                              'out = "run"\nepochs = 3\nbatch_size = 4\nworkers = 0\n'
+                              'pretrained = false\n', encoding="utf-8")
+            with redirect_stdout(io.StringIO()):
+                train_cnn.main(["--config", str(config), "--epochs", "1"])  # flag wins
+            meta = json.loads((root / "run" / "run_metadata.json").read_text())
+            self.assertEqual([h["epoch"] for h in meta["history"]], [1])
+            self.assertEqual(meta["args"]["batch_size"], "4")
+            self.assertEqual(len(meta["config_sha256"]), 64)
+            self.assertFalse(Path(meta["args"]["out"]).is_absolute())
+
     def test_rejects_foreign_checkpoint(self):
         import torch
         with tempfile.TemporaryDirectory() as tmp:

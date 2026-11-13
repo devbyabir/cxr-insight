@@ -1,0 +1,15 @@
+# Exact settings of the reported CNN run (README "Results"). Paths are relative
+# to this file. Reproduce with:  cxr-train-cnn --config configs/cnn_nih_images001.toml
+name = "cnn-nih-images001-seed42"
+
+[cnn]
+splits = "../data/splits/nih_images001_seed42"
+image_dir = "../data/raw/nih/images_001"
+out = "../runs/cnn_nih_images001_seed42"
+epochs = 6
+batch_size = 32
+lr = 3e-4
+weight_decay = 1e-4
+seed = 42
+workers = 4
+pretrained = true

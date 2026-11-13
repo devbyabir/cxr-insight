@@ -63,9 +63,11 @@ with st.sidebar:
     if data.get("subset"):
         st.write(f"Trained on a **subset** of NIH ChestX-ray14 "
                  f"({data.get('images_used')} images), not the full dataset.")
-    commit = (meta.get("git") or {}).get("commit")
-    if commit:
-        st.write(f"Code commit: `{commit[:10]}`")
+    git = meta.get("git") or {}
+    if git.get("commit"):
+        note = " plus uncommitted changes at training time" if git.get("dirty") else ""
+        st.write(f"Trained from commit `{git['commit'][:10]}`{note}. See the README for the "
+                 "commit that reproduces this run.")
     st.caption("Thresholds were fitted on the validation split. See the README for test-set "
                "results and limitations.")
     st.caption("Language-model report generation needs a GPU and is not run in this free "

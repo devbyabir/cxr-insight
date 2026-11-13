@@ -51,6 +51,10 @@ class ManifestSplitTests(unittest.TestCase):
                                 "Patient ID": str(patient), "View Position": "PA"})
                 if patient > 16:
                     test.append(name)
+        junk = images / "__MACOSX"
+        junk.mkdir()
+        (junk / "00000001_000.png").write_bytes(b"resource fork")
+        (images / "._00000001_001.png").write_bytes(b"resource fork")
         self.data_entry = self.root / "Data_Entry.csv"
         with self.data_entry.open("w", newline="", encoding="utf-8") as stream:
             writer = csv.DictWriter(stream, fieldnames=list(entries[0]))
@@ -65,6 +69,7 @@ class ManifestSplitTests(unittest.TestCase):
         self.assertEqual(rows[1]["labels"], "Effusion|Mass")
         self.assertEqual(rows[0]["labels"], "")
         self.assertEqual(rows[0]["patient_id"], "1")
+        self.assertEqual(rows[0]["image_path"], "00000001_000.png")  # not the __MACOSX copy
 
     def test_official_test_frozen_and_patients_disjoint(self):
         rows, _ = build_manifest(self.data_entry, self.root / "images", self.test_list)

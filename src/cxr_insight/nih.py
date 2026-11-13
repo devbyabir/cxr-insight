@@ -49,7 +49,9 @@ def read_list(path):
 def build_manifest(data_entry, image_dir, test_list, hash_images=True):
     """Rows for every metadata entry whose image file is present."""
     image_dir = Path(image_dir)
-    available = {p.name: p for p in image_dir.rglob("*.png")}
+    # Skip macOS archive metadata (__MACOSX/, "._name.png"): same names, not images.
+    available = {p.name: p for p in image_dir.rglob("*.png")
+                 if not p.name.startswith("._") and "__MACOSX" not in p.parts}
     test_names = read_list(test_list)
     rows, missing = [], 0
     with Path(data_entry).open(encoding="utf-8-sig", newline="") as stream:

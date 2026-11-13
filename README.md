@@ -1,75 +1,147 @@
-# CXR Insight — Chest X-Ray Analysis & Report Generation
+<div align="center">
 
-**CXR Insight: Chest X-Ray Classification and Vision-Language Report Generation**
-Hospital internship research prototype, rebuilt as a reproducible pipeline.
+# 🩻 CXR Insight
 
-> **Research demo — not for clinical diagnosis.** No result here has been
-> clinically validated. Do not use any output for a medical decision.
+### Chest X-Ray Classification and Vision-Language Report Generation
 
-Maintainer: Abir Ahmmed ([@devbyabir](https://github.com/devbyabir)).
-Third-party data, models and code are credited in [ATTRIBUTION.md](ATTRIBUTION.md).
+A hospital-internship research prototype, rebuilt as an audited and reproducible pipeline:
+multi-label chest X-ray classification, Grad-CAM explanations and a draft-report demo.
 
-## What it does
+<a href="https://cxr-insight.streamlit.app/">
+  <img src="https://static.streamlit.io/badges/streamlit_badge_black_white.svg" alt="Open the live demo in Streamlit" height="44">
+</a>
 
-1. **Multi-label classification** of 14 NIH ChestX-ray14 findings with EfficientNet-B0.
-   An image can have several findings; "No Finding" means none of the 14 is present.
-2. **Grad-CAM** to show which image regions raised a finding's score.
-3. **Report drafting.** The free CPU demo fills a fixed template from the classifier
-   scores. A small vision-language model (VLM) can be fine-tuned on free Colab to
-   write reports, but that needs report data with documented provenance (see
-   [Status](#status)).
+**[▶ Try the live demo](https://cxr-insight.streamlit.app/)** ·
+[Results](#-results) ·
+[Model checkpoint](https://github.com/devbyabir/cxr-insight/releases/tag/cnn-nih-images001-seed42) ·
+[Reproduce](#-reproduce) ·
+[Legacy audit](docs/AUDIT.md)
 
-## Architecture
+[![tests](https://github.com/devbyabir/cxr-insight/actions/workflows/tests.yml/badge.svg)](https://github.com/devbyabir/cxr-insight/actions/workflows/tests.yml)
+[![License: MIT](https://img.shields.io/badge/code%20license-MIT-blue.svg)](LICENSE)
+![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-3776AB?logo=python&logoColor=white)
+![PyTorch](https://img.shields.io/badge/PyTorch-CPU-EE4C2C?logo=pytorch&logoColor=white)
+![Data](https://img.shields.io/badge/data-NIH%20ChestX--ray14-6f42c1)
 
-```
-NIH metadata + images ──► cxr-nih-prepare ──► train / validation / test (by patient;
-                                              official NIH test list frozen)
-                                   │
-                                   ▼
-          cxr-train-cnn (train-only augmentation, resumable checkpoints,
-                         best validation macro AUROC, validation thresholds)
-                                   │ classifier.pt + run_metadata.json
-                    ┌──────────────┴───────────────┐
-                    ▼                              ▼
-  cxr-evaluate-cnn (test once:          streamlit_app.py (upload → scores →
-  per-class metrics, AUROC + CI,        Grad-CAM → template draft; in memory)
-  ROC, confusion matrices)
-                    
-Report generation (GPU, Colab): notebooks/finetune_vlm_colab.ipynb
-  LoRA fine-tune ─► verify trained adapter loads ─► baseline vs fine-tuned on the
-  same test cases ─► cxr_insight.report_eval
-```
+</div>
 
-| Module | Purpose |
+> [!WARNING]
+> **Research demo — not for clinical diagnosis.** Nothing here has been clinically validated.
+> Do not use any output for a medical decision.
+
+<p align="center">
+  <a href="https://cxr-insight.streamlit.app/">
+    <img src="docs/assets/demo.jpg" alt="CXR Insight demo: an uploaded NIH test X-ray with a Grad-CAM overlay, per-finding scores and a template draft report" width="90%">
+  </a>
+  <br><sub>The live demo on an NIH ChestX-ray14 test image: per-finding scores, Grad-CAM and a template draft report.</sub>
+</p>
+
+---
+
+## ✨ Highlights
+
+| | |
 |---|---|
-| `nih.py` | Multi-label NIH manifest and patient-grouped splits |
-| `data.py` | Validation, deduplication and patient splits for image–report manifests (report data); NIH classification data uses `nih.py` |
-| `legacy.py` | Audit and deduplicate the legacy synthetic report CSV |
-| `cnn.py` | Shared preprocessing, augmentation, EfficientNet-B0, Grad-CAM |
-| `train_cnn.py` / `evaluate_cnn.py` | Resumable training; one-time test evaluation |
-| `metrics.py` | Exact AUROC, per-class metrics, patient-level bootstrap CI |
-| `models.py` / `inference.py` | VLM loading (trained adapters only, verified), neutral default prompt, report parsing |
-| `report_eval.py` | Held-out report comparison (structure, finding agreement) |
-| `config.py` / `runinfo.py` | Typed configs read by `cxr-train-cnn --config` and the VLM notebook; commit, versions, seed and data hashes per run |
-| `demo.py` + `streamlit_app.py` | Demo logic and UI |
+| 🔬 **Multi-label classification** | EfficientNet-B0 scores 14 NIH ChestX-ray14 findings independently. One image can have several findings; "No Finding" means none of the 14 is present. |
+| 🧭 **Patient-level splits** | NIH's official patient-wise test list is kept frozen. Train and validation are split by patient, so no patient appears in two splits. |
+| 🔥 **Grad-CAM** | Shows which regions raised a finding's score (influence, not lesion location). |
+| 📝 **Draft report** | The free CPU demo fills a fixed template from the classifier scores and says so. A vision-language model can be fine-tuned on free Colab (notebook included). |
+| 📏 **Honest evaluation** | Model selection on validation only, a single test run, exact AUROC with patient-level bootstrap CIs, and raw predictions published. |
+| 🛡️ **Safe demo** | Uploads stay in memory; PNG/JPEG only, 10 MB and 36-megapixel limits; the checkpoint is hash-checked and loaded with `weights_only=True`. |
+| 🔁 **Reproducible** | Typed configs, resumable checkpoints, and run metadata (commit, package versions, seed, data hashes). |
 
-## Setup
+## 📊 Results at a glance
 
-CPU is enough for the CNN and demo; the VLM notebook runs on a Colab GPU. CI tests the
-dependency-free core on Python 3.11–3.13 and the full stack on 3.12; development used 3.14.
+> Measured on a **subset** of NIH ChestX-ray14 (archive `images_001`, 4,999 images,
+> about 4.5% of the dataset). These numbers describe that subset only.
+
+| Split | Images / patients | Macro AUROC (14 findings) |
+|---|---|---|
+| Validation (model selection) | 603 / 191 | 0.722 |
+| **Test** (NIH official list, evaluated once) | 967 / 62 | **0.640** (95% CI 0.605–0.664) |
+
+The legacy notebooks reported about **99% accuracy**. That figure came from augmentation
+and patient leakage across splits, and is not valid. See [docs/AUDIT.md](docs/AUDIT.md).
+
+## 🚀 Quick start
+
+**Online:** open **[cxr-insight.streamlit.app](https://cxr-insight.streamlit.app/)** and upload
+a frontal chest X-ray (PNG or JPEG). Nothing is stored.
+
+**Locally:**
 
 ```bash
+git clone https://github.com/devbyabir/cxr-insight.git && cd cxr-insight
 python -m venv .venv
 .venv/Scripts/python -m pip install -r requirements.txt   # Linux/macOS: .venv/bin/python
 .venv/Scripts/python -m pip install -e .
 python -m unittest discover -s tests -v
 ```
 
-## Reproduce
+Run the demo with the published checkpoint by putting this in `.streamlit/secrets.toml`
+(git-ignored), then `streamlit run streamlit_app.py`:
 
-Data (not in this repository): NIH ChestX-ray14 metadata and image archives from
-https://nihcc.app.box.com/v/ChestXray-NIHCC (the commands below use the Hugging Face
-mirror of the same files). Remove `__MACOSX/` from extracted archives.
+```toml
+CXR_CLASSIFIER_URL = "https://github.com/devbyabir/cxr-insight/releases/download/cnn-nih-images001-seed42/cxr-insight-cnn-nih-images001-seed42-fp16.pt"
+CXR_CLASSIFIER_SHA256 = "5b77dd7c6421573dd49cfddc1a60d4bd555004ee00e3443b667d5963e70b096f"
+```
+
+Use `CXR_CLASSIFIER_PATH = "runs/<run>/classifier.pt"` instead for a checkpoint you trained.
+The app downloads a URL once (60 s timeout, 200 MB cap), checks the hash before caching it,
+and refuses a file that does not match.
+
+## 🏗️ Architecture
+
+```mermaid
+flowchart LR
+    A[NIH metadata + images] --> B[cxr-nih-prepare<br/>patient-grouped splits<br/>official test list frozen]
+    B --> C[cxr-train-cnn<br/>train-only augmentation<br/>resumable checkpoints]
+    C -->|best validation macro AUROC<br/>validation thresholds| D[(classifier.pt<br/>+ run metadata)]
+    D --> E[cxr-evaluate-cnn<br/>test once: per-class metrics,<br/>AUROC + CI, ROC, confusion]
+    D --> F[Streamlit demo<br/>upload → scores → Grad-CAM<br/>→ template draft]
+    G[Report data with<br/>documented provenance] --> H[Colab VLM notebook<br/>LoRA fine-tune]
+    H --> I[verify trained adapter<br/>baseline vs fine-tuned<br/>report_eval]
+```
+
+<details>
+<summary><b>Modules</b></summary>
+
+| Module | Purpose |
+|---|---|
+| `nih.py` | Multi-label NIH manifest and patient-grouped splits |
+| `data.py` | Validation, deduplication and patient splits for image–report manifests (report data) |
+| `legacy.py` | Audit and deduplicate the legacy synthetic report CSV |
+| `cnn.py` | Shared preprocessing, train-only augmentation, EfficientNet-B0, Grad-CAM |
+| `train_cnn.py` / `evaluate_cnn.py` | Resumable training; one-time test evaluation |
+| `metrics.py` | Exact AUROC, per-class metrics, patient-level bootstrap CI |
+| `models.py` / `inference.py` | VLM loading (trained adapters only, verified), neutral default prompt, report parsing |
+| `report_eval.py` | Held-out report comparison (structure, finding agreement) |
+| `config.py` / `runinfo.py` | Typed configs; commit, versions, seed and data hashes per run |
+| `demo.py` + `streamlit_app.py` | Demo logic and UI |
+
+</details>
+
+<details>
+<summary><b>Project structure</b></summary>
+
+```
+cxr-insight/
+├── src/cxr_insight/        # library code (modules above)
+├── tests/                  # 108 unit tests (stdlib unittest)
+├── configs/                # cnn_nih_images001.toml (reported run), vlm_qwen2vl_2b.toml
+├── notebooks/              # free-Colab CNN training and VLM fine-tuning (no outputs)
+├── docs/                   # AUDIT, PROVENANCE, EVALUATION, results/
+├── streamlit_app.py        # demo entry point
+└── requirements.txt        # CPU stack for the demo and CI
+```
+
+</details>
+
+## 🔁 Reproduce
+
+Data is not included. Download the NIH ChestX-ray14 metadata and image archives from
+the [NIH download site](https://nihcc.app.box.com/v/ChestXray-NIHCC); the commands below
+use the Hugging Face mirror of the same files. Remove `__MACOSX/` from extracted archives.
 
 ```bash
 B=https://huggingface.co/datasets/alkzar90/NIH-Chest-X-ray-dataset/resolve/main/data
@@ -86,107 +158,95 @@ cxr-evaluate-cnn --checkpoint runs/cnn_nih_images001_seed42/classifier.pt \
   --out runs/cnn_nih_images001_seed42/test_eval
 ```
 
-Command-line flags override the config (e.g. `--epochs 2`). Re-running
-`cxr-train-cnn` with the same arguments resumes from `last.pt`;
-`--session-epochs N` stops cleanly after N epochs (useful on free Colab).
-Full-dataset training on free Colab: [notebooks/train_cnn_colab.ipynb](notebooks/train_cnn_colab.ipynb).
+- Command-line flags override the config (e.g. `--epochs 2`).
+- Re-running `cxr-train-cnn` with the same arguments resumes from `last.pt`;
+  `--session-epochs N` stops cleanly after N epochs (useful on free Colab).
+- Full dataset on free Colab: [notebooks/train_cnn_colab.ipynb](notebooks/train_cnn_colab.ipynb).
+- Report generation on free Colab: [notebooks/finetune_vlm_colab.ipynb](notebooks/finetune_vlm_colab.ipynb).
 
-Demo:
+## 📈 Results
 
-```bash
-# .streamlit/secrets.toml (git-ignored):  CXR_CLASSIFIER_PATH = "runs/<run>/classifier.pt"
-streamlit run streamlit_app.py
-```
-
-For a hosted demo, publish `classifier.pt` as a GitHub Release asset and set
-`CXR_CLASSIFIER_URL` and `CXR_CLASSIFIER_SHA256` in the host's secrets. The app
-downloads it once (60 s timeout, 200 MB cap), checks the hash before caching it, and
-loads it with `torch.load(weights_only=True)`. Uploads are handled in memory only and are
-limited to PNG/JPEG, 10 MB and 36 megapixels, so a small compressed file cannot expand
-into gigabytes of memory.
-
-## Results
-
-### CNN, NIH ChestX-ray14 subset (measured 2026-11-14)
-
-**Scope: these numbers describe a 4,999-image subset (archive `images_001`, about
-4.5% of the 112,120 images), not the full dataset.** They are not comparable
-to full-dataset benchmarks and say nothing about clinical performance.
+<details open>
+<summary><b>CNN on the NIH ChestX-ray14 <code>images_001</code> subset (measured 2026-11-14)</b></summary>
 
 | Setting | Value |
 |---|---|
-| Data | NIH ChestX-ray14 `images_001`: train 3,429 images / 1,082 patients; validation 603 / 191; test 967 / 62 (NIH official test list) |
+| Data | Train 3,429 images / 1,082 patients; validation 603 / 191; test 967 / 62 (NIH official test list) |
 | Model | EfficientNet-B0 (ImageNet init), 224×224, BCE loss, AdamW, one-cycle LR 3e-4, batch 32, 6 epochs, seed 42 |
 | Hardware | CPU only, about 3.5 min per epoch |
 | Selection | Best validation macro AUROC (epoch 3); per-class thresholds fitted on validation |
-| Code | commit `5482cbb` (identical source to the run); torch 2.15.0+cpu, torchvision 0.29.2, Python 3.14.7 |
+| Code | Tag [`cnn-nih-images001-seed42`](https://github.com/devbyabir/cxr-insight/releases/tag/cnn-nih-images001-seed42) (commit `5482cbb`); torch 2.15.0+cpu, torchvision 0.29.2, Python 3.14.7 |
 
-| Split | Macro AUROC (14 labels) |
+| Metric (test, validation thresholds) | Value |
 |---|---|
-| Validation (model selection) | 0.722 |
-| **Test (evaluated once)** | **0.640** (95% CI 0.605–0.664, bootstrap over patients) |
+| Macro AUROC | **0.640** (95% CI 0.605–0.664, bootstrap over patients) |
+| Micro precision / recall / F1 | 0.138 / 0.547 / 0.220 |
+| Per-class AUROC range | 0.510 (Mass, Nodule) to 0.815 (Fibrosis) |
 
-Test micro precision / recall / F1 at the validation thresholds: 0.138 / 0.547 / 0.220.
-Per-class test AUROC ranged from 0.510 (Mass, Nodule) to 0.815 (Fibrosis). Several
-classes have few positives (e.g. Hernia 15, Pneumonia 18), so their values are unstable.
-Full per-class metrics, confusion counts, raw predictions, the ROC plot and run
-metadata are in [docs/results/cnn_nih_images001_seed42](docs/results/cnn_nih_images001_seed42).
+Several classes have few positives (e.g. Hernia 15, Pneumonia 18), so their values are unstable.
+The drop from validation to test reflects a test set from only 62 patients with many follow-up
+images and a different label mix. Low thresholds favour recall, so the demo flags many false
+positives. Per-class metrics, confusion counts, raw predictions, plots and run metadata are in
+[docs/results/cnn_nih_images001_seed42](docs/results/cnn_nih_images001_seed42).
 
-![Test ROC](docs/results/cnn_nih_images001_seed42/roc.png)
+<p align="center"><img src="docs/results/cnn_nih_images001_seed42/roc.png" alt="Test ROC curves for 14 findings" width="70%"></p>
 
-Validation-to-test drop: the test set comes from only 62 patients with many
-follow-up images, and NIH's test patients differ in label mix from train/validation.
-Low thresholds favour recall, so the demo flags many false positives.
+</details>
 
-**Legacy results (not valid):** the original notebooks reported about 99% accuracy.
-That figure came from augmentation and patient leakage across splits; see
-[docs/AUDIT.md](docs/AUDIT.md).
+**Report generation:** no VLM has been fine-tuned or evaluated yet, so there are no
+report-generation results. The evaluation tooling (`cxr_insight.report_eval`, baseline vs
+fine-tuned on identical test cases) is in place and tested.
 
-### Report generation
-
-No VLM has been fine-tuned or evaluated yet, so there are no report-generation
-results. The evaluation tooling (`cxr_insight.report_eval`, baseline vs fine-tuned
-on identical test cases) is in place and tested.
-
-## Limitations
-
-- NIH labels were mined from radiology reports by NLP and are noisy; the
-  official test labels are not expert-adjudicated.
-- Results from a subset of the images describe that subset only.
-- Test sets drawn from few patients give wide confidence intervals.
-- Grad-CAM shows what influenced a score, not where disease is.
-- The template draft report only restates classifier scores. It is not a
-  radiology report and has no clinical meaning.
-- The CNN takes any image. It does not check that the upload is a chest X-ray.
-- No VLM has been fine-tuned or evaluated in this repository yet.
-
-## Status
-
-| Part | State |
-|---|---|
-| Legacy audit and data cleaning | Done ([docs/AUDIT.md](docs/AUDIT.md), [docs/PROVENANCE.md](docs/PROVENANCE.md)) |
-| Patient-grouped multi-label NIH pipeline | Done |
-| CNN trained and evaluated | Subset only (see Results) |
-| Streamlit demo | Tested locally (upload, scores, Grad-CAM, draft, error states) |
-| VLM fine-tuning | Notebook ready; needs report data with documented provenance and a Colab GPU run |
-| Hosted demo | Not deployed: needs `classifier.pt` as a GitHub Release asset and a Streamlit Community Cloud sign-in |
-| Full-dataset CNN | Not run: [notebooks/train_cnn_colab.ipynb](notebooks/train_cnn_colab.ipynb) with all 12 archives |
-
-See also the [evaluation protocol](docs/EVALUATION.md).
-
-## Model card (CNN)
+## 🗂️ Model card (CNN)
 
 | | |
 |---|---|
 | Model | EfficientNet-B0 (ImageNet-1k init), 14 sigmoid outputs |
-| Intended use | Research and teaching: exploring multi-label CXR classification, evaluation practice and explainability |
+| Intended use | Research and teaching: multi-label CXR classification, evaluation practice, explainability |
 | Out of scope | Diagnosis, triage, screening or any decision about a patient; non-chest or non-radiograph images; paediatric or lateral views (not evaluated) |
 | Training data | NIH ChestX-ray14 archive `images_001` (3,429 training images, 1,082 patients); labels mined from reports by NLP |
-| Evaluation | Frozen NIH test list subset: 967 images, 62 patients; macro AUROC 0.640 (95% CI 0.605–0.664) |
-| Known failure modes | Low precision at validation thresholds (many false flags); near-chance AUROC for Mass and Nodule; no out-of-distribution check |
+| Evaluation | Frozen NIH test-list subset: 967 images, 62 patients; macro AUROC 0.640 (95% CI 0.605–0.664) |
+| Published weights | [Release asset](https://github.com/devbyabir/cxr-insight/releases/tag/cnn-nih-images001-seed42): float16 copy of the trained weights (8.2 MB); re-evaluated on the same test set with macro AUROC 0.6395 vs 0.6396 (float32) |
+| Known failure modes | Low precision at validation thresholds (many false flags); near-chance AUROC for Mass and Nodule; no check that the upload is a chest X-ray |
 | Explainability | Grad-CAM on the last convolutional block; indicates influence, not lesion location |
 
-## License
+## ⚠️ Limitations
 
-Code: MIT ([LICENSE](LICENSE)). Data, model weights and third-party software keep
-their own terms ([ATTRIBUTION.md](ATTRIBUTION.md)).
+- NIH labels were mined from radiology reports by NLP and are noisy; the official test labels
+  are not expert-adjudicated.
+- Results from a subset describe that subset only; few test patients give wide intervals.
+- Grad-CAM shows what influenced a score, not where disease is.
+- The template draft report only restates classifier scores. It is not a radiology report.
+- The demo does not check that an upload is a chest X-ray.
+- No VLM has been fine-tuned or evaluated in this repository yet.
+
+## 🧾 Project status
+
+| Part | Status |
+|---|---|
+| Legacy audit and data cleaning | ✅ Done — [AUDIT](docs/AUDIT.md), [PROVENANCE](docs/PROVENANCE.md) |
+| Patient-grouped multi-label NIH pipeline | ✅ Done |
+| CNN trained and evaluated | ✅ Subset (`images_001`) — see [Results](#-results) |
+| Live demo | ✅ [cxr-insight.streamlit.app](https://cxr-insight.streamlit.app/) |
+| Checkpoint release | ✅ [cnn-nih-images001-seed42](https://github.com/devbyabir/cxr-insight/releases/tag/cnn-nih-images001-seed42) |
+| Full-dataset CNN | 🔜 Future work — [Colab notebook](notebooks/train_cnn_colab.ipynb) with all 12 archives |
+| VLM report generation | 🔜 Future work — needs report data with documented provenance and a Colab GPU run |
+
+See also the [evaluation protocol](docs/EVALUATION.md).
+
+## 🙏 Attribution and license
+
+- **Data:** NIH ChestX-ray14, provided by the NIH Clinical Center
+  ([download site](https://nihcc.app.box.com/v/ChestXray-NIHCC)); Wang X. et al.,
+  *ChestX-ray8*, IEEE CVPR 2017.
+- **Methods and libraries:** EfficientNet (Tan & Le, 2019; torchvision weights), Grad-CAM
+  (Selvaraju et al., 2017), Unsloth (VLM notebook), PyTorch, Streamlit.
+  Full credits in [ATTRIBUTION.md](ATTRIBUTION.md).
+- **License:** code under [MIT](LICENSE). Data, model weights and third-party software keep
+  their own terms.
+
+<div align="center">
+
+Maintained by **Abir Ahmmed** ([@devbyabir](https://github.com/devbyabir))
+
+</div>

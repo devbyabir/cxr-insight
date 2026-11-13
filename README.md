@@ -93,15 +93,24 @@ and refuses a file that does not match.
 ## 🏗️ Architecture
 
 ```mermaid
-flowchart LR
-    A[NIH metadata + images] --> B[cxr-nih-prepare<br/>patient-grouped splits<br/>official test list frozen]
-    B --> C[cxr-train-cnn<br/>train-only augmentation<br/>resumable checkpoints]
-    C -->|best validation macro AUROC<br/>validation thresholds| D[(classifier.pt<br/>+ run metadata)]
-    D --> E[cxr-evaluate-cnn<br/>test once: per-class metrics,<br/>AUROC + CI, ROC, confusion]
-    D --> F[Streamlit demo<br/>upload → scores → Grad-CAM<br/>→ template draft]
-    G[Report data with<br/>documented provenance] --> H[Colab VLM notebook<br/>LoRA fine-tune]
-    H --> I[verify trained adapter<br/>baseline vs fine-tuned<br/>report_eval]
+flowchart TD
+    A["NIH data"] --> B["Prepare splits<br/>(by patient)"]
+    B --> C["Train CNN<br/>(resumable)"]
+    C --> D[("Checkpoint<br/>+ metadata")]
+    D --> E["Evaluate once<br/>(test set)"]
+    D --> F["Streamlit demo"]
+    G["Report data"] --> H["Fine-tune VLM<br/>(Colab)"]
+    H --> I["Compare<br/>baseline vs tuned"]
 ```
+
+| Step | Command / file | What it guarantees |
+|---|---|---|
+| Prepare splits | `cxr-nih-prepare` | Official NIH test list frozen; train/validation split by patient |
+| Train CNN | `cxr-train-cnn --config …` | Augmentation on training data only; per-epoch checkpoints and resume; model chosen on validation macro AUROC |
+| Evaluate once | `cxr-evaluate-cnn` | Per-class metrics, AUROC with patient-bootstrap CI, ROC and confusion plots, raw predictions |
+| Streamlit demo | `streamlit_app.py` | In-memory uploads, scores, Grad-CAM, template draft |
+| Fine-tune VLM | `notebooks/finetune_vlm_colab.ipynb` | LoRA on free Colab with resume; trained adapter verified on reload |
+| Compare | `cxr_insight.report_eval` | Baseline and fine-tuned models on the same held-out cases |
 
 <details>
 <summary><b>Modules</b></summary>

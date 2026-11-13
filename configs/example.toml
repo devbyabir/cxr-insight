@@ -1,0 +1,26 @@
+# Example experiment config. Paths are relative to this file's directory.
+# Real data lives in the git-ignored data/ folder; nothing here is a validated setting.
+name = "llama32-vision-efficientnet-baseline"
+
+[data]
+manifest = "../data/manifest.csv"
+image_root = "../data/images"
+output_dir = "../data/splits/seed42"
+seed = 42
+validation = 0.15
+test = 0.15
+
+[model]
+base_model_id = "unsloth/Llama-3.2-11B-Vision-Instruct"
+# revision = "<pin a commit hash before any reported run>"
+image_encoder = "efficientnet_b0"
+
+[training]
+learning_rate = 2e-4
+epochs = 1
+batch_size = 2
+gradient_accumulation_steps = 4
+max_seq_length = 2048
+lora_r = 16
+lora_alpha = 16
+seed = 42

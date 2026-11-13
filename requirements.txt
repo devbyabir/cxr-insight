@@ -1,0 +1,8 @@
+# Streamlit Community Cloud (CPU). The +cpu wheels avoid multi-GB CUDA builds.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.15.0+cpu
+torchvision==0.29.2+cpu
+streamlit==1.67.0
+numpy==2.5.4
+pillow==13.0.0
+matplotlib==3.11.2

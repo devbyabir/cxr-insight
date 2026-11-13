@@ -15,3 +15,6 @@ runs/
 *.keras
 .ipynb_checkpoints/
 .DS_Store
+*.log
+*.part
+.streamlit/secrets.toml

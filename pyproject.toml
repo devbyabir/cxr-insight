@@ -15,10 +15,16 @@ dependencies = []
 [project.optional-dependencies]
 imaging = ["numpy", "pillow"]
 classifier = ["numpy", "pillow", "tensorflow"]
+cnn = ["numpy", "pillow", "matplotlib", "torch", "torchvision"]
 vlm = ["pillow", "torch", "transformers", "unsloth"]
+demo = ["numpy", "pillow", "matplotlib", "torch", "torchvision", "streamlit"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [project.scripts]
 cxr-data = "cxr_insight.data:main"
+cxr-legacy-audit = "cxr_insight.legacy:main"
+cxr-nih-prepare = "cxr_insight.nih:main"
+cxr-train-cnn = "cxr_insight.train_cnn:main"
+cxr-evaluate-cnn = "cxr_insight.evaluate_cnn:main"

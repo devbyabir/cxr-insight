@@ -43,19 +43,20 @@ Report generation (GPU, Colab): notebooks/finetune_vlm_colab.ipynb
 | Module | Purpose |
 |---|---|
 | `nih.py` | Multi-label NIH manifest and patient-grouped splits |
-| `data.py` | Generic manifest validation, deduplication and patient splits |
+| `data.py` | Validation, deduplication and patient splits for image–report manifests (report data); NIH classification data uses `nih.py` |
 | `legacy.py` | Audit and deduplicate the legacy synthetic report CSV |
 | `cnn.py` | Shared preprocessing, augmentation, EfficientNet-B0, Grad-CAM |
 | `train_cnn.py` / `evaluate_cnn.py` | Resumable training; one-time test evaluation |
 | `metrics.py` | Exact AUROC, per-class metrics, patient-level bootstrap CI |
-| `models.py` / `inference.py` | VLM loading (trained adapters only), prompts, parsing |
+| `models.py` / `inference.py` | VLM loading (trained adapters only, verified), neutral default prompt, report parsing |
 | `report_eval.py` | Held-out report comparison (structure, finding agreement) |
-| `config.py` / `runinfo.py` | Typed configs; commit, versions, seed and data hashes per run |
+| `config.py` / `runinfo.py` | Typed configs read by `cxr-train-cnn --config` and the VLM notebook; commit, versions, seed and data hashes per run |
 | `demo.py` + `streamlit_app.py` | Demo logic and UI |
 
 ## Setup
 
-Python 3.11–3.14 for the CNN and demo (CPU is enough); the VLM notebook runs on Colab.
+CPU is enough for the CNN and demo; the VLM notebook runs on a Colab GPU. CI tests the
+dependency-free core on Python 3.11–3.13 and the full stack on 3.12; development used 3.14.
 
 ```bash
 python -m venv .venv
@@ -79,14 +80,14 @@ unzip -q images_001.zip -x "__MACOSX/*" -d images_001 && cd ../../..
 cxr-nih-prepare --data-entry data/raw/nih/Data_Entry_2017_v2020.csv \
   --test-list data/raw/nih/test_list.txt --image-dir data/raw/nih/images_001 \
   --output data/splits/nih_images001_seed42
-cxr-train-cnn --splits data/splits/nih_images001_seed42 --image-dir data/raw/nih/images_001 \
-  --out runs/cnn_nih_images001_seed42 --epochs 6 --batch-size 32 --workers 4
+cxr-train-cnn --config configs/cnn_nih_images001.toml   # exact settings of the reported run
 cxr-evaluate-cnn --checkpoint runs/cnn_nih_images001_seed42/classifier.pt \
   --splits data/splits/nih_images001_seed42 --image-dir data/raw/nih/images_001 \
   --out runs/cnn_nih_images001_seed42/test_eval
 ```
 
-Re-running `cxr-train-cnn` with the same arguments resumes from `last.pt`;
+Command-line flags override the config (e.g. `--epochs 2`). Re-running
+`cxr-train-cnn` with the same arguments resumes from `last.pt`;
 `--session-epochs N` stops cleanly after N epochs (useful on free Colab).
 Full-dataset training on free Colab: [notebooks/train_cnn_colab.ipynb](notebooks/train_cnn_colab.ipynb).
 
@@ -99,7 +100,10 @@ streamlit run streamlit_app.py
 
 For a hosted demo, publish `classifier.pt` as a GitHub Release asset and set
 `CXR_CLASSIFIER_URL` and `CXR_CLASSIFIER_SHA256` in the host's secrets. The app
-downloads it once and refuses a file whose hash does not match.
+downloads it once (60 s timeout, 200 MB cap), checks the hash before caching it, and
+loads it with `torch.load(weights_only=True)`. Uploads are handled in memory only and are
+limited to PNG/JPEG, 10 MB and 36 megapixels, so a small compressed file cannot expand
+into gigabytes of memory.
 
 ## Results
 
@@ -163,11 +167,24 @@ on identical test cases) is in place and tested.
 | Legacy audit and data cleaning | Done ([docs/AUDIT.md](docs/AUDIT.md), [docs/PROVENANCE.md](docs/PROVENANCE.md)) |
 | Patient-grouped multi-label NIH pipeline | Done |
 | CNN trained and evaluated | Subset only (see Results) |
-| Streamlit demo | Tested locally |
+| Streamlit demo | Tested locally (upload, scores, Grad-CAM, draft, error states) |
 | VLM fine-tuning | Notebook ready; needs report data with documented provenance and a Colab GPU run |
-| Hosted demo | Needs a GitHub repository and Streamlit Community Cloud sign-in |
+| Hosted demo | Not deployed: needs `classifier.pt` as a GitHub Release asset and a Streamlit Community Cloud sign-in |
+| Full-dataset CNN | Not run: [notebooks/train_cnn_colab.ipynb](notebooks/train_cnn_colab.ipynb) with all 12 archives |
 
 See also the [evaluation protocol](docs/EVALUATION.md).
+
+## Model card (CNN)
+
+| | |
+|---|---|
+| Model | EfficientNet-B0 (ImageNet-1k init), 14 sigmoid outputs |
+| Intended use | Research and teaching: exploring multi-label CXR classification, evaluation practice and explainability |
+| Out of scope | Diagnosis, triage, screening or any decision about a patient; non-chest or non-radiograph images; paediatric or lateral views (not evaluated) |
+| Training data | NIH ChestX-ray14 archive `images_001` (3,429 training images, 1,082 patients); labels mined from reports by NLP |
+| Evaluation | Frozen NIH test list subset: 967 images, 62 patients; macro AUROC 0.640 (95% CI 0.605–0.664) |
+| Known failure modes | Low precision at validation thresholds (many false flags); near-chance AUROC for Mass and Nodule; no out-of-distribution check |
+| Explainability | Grad-CAM on the last convolutional block; indicates influence, not lesion location |
 
 ## License
 

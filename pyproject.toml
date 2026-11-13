@@ -9,6 +9,14 @@ description = "Reproducible chest X-ray research and report-generation experimen
 requires-python = ">=3.11"
 dependencies = []
 
+# Heavy, optional stacks. Core utilities and the test suite need none of them.
+# "vlm" needs a CUDA GPU and Python 3.11/3.12 (e.g. Colab); the legacy notebooks
+# pinned transformers==4.53.2 — record exact versions with every reported run.
+[project.optional-dependencies]
+imaging = ["numpy", "pillow"]
+classifier = ["numpy", "pillow", "tensorflow"]
+vlm = ["pillow", "torch", "transformers", "unsloth"]
+
 [tool.setuptools.packages.find]
 where = ["src"]
 

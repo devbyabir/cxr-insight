@@ -6,10 +6,11 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-from cxr_insight.inference import (DISCLAIMER, LEGACY_INSTRUCTION_TEMPLATE, GenerationSettings,
+from cxr_insight.inference import (DEFAULT_INSTRUCTION, DISCLAIMER, LEGACY_INSTRUCTION_TEMPLATE, GenerationSettings,
                                    build_instruction, build_messages, generate_report,
                                    generate_text, parse_report)
-from cxr_insight.models import LABELS, Prediction, ReportModel
+from cxr_insight.models import ReportModel
+from cxr_insight.nih import NIH_LABELS
 
 HAS_PIL = importlib.util.find_spec("PIL") is not None
 
@@ -71,7 +72,7 @@ class PromptTests(unittest.TestCase):
         self.assertNotIn("{finding}", text)
 
     def test_every_label_renders(self):
-        for label in LABELS:
+        for label in NIH_LABELS + ("No Finding",):
             self.assertIn(f"disease is {label}.", build_instruction(label))
 
     def test_multiple_findings_joined(self):
@@ -155,12 +156,6 @@ class GenerationTests(unittest.TestCase):
         self.assertEqual(rm.model.kwargs["max_new_tokens"], 512)
 
 
-class FakeClassifier:
-    def predict(self, image):
-        self.image = image
-        return [Prediction("Effusion", 0.7), Prediction("Mass", 0.6), Prediction("No Finding", 0.1)]
-
-
 @unittest.skipUnless(HAS_PIL, "Pillow required")
 class PipelineTests(unittest.TestCase):
     def setUp(self):
@@ -170,12 +165,17 @@ class PipelineTests(unittest.TestCase):
         self.image_path = Path(tmp.name) / "cxr.png"
         Image.new("L", (64, 64), 200).save(self.image_path)
 
-    def test_classifier_drives_prompt_and_result_serialises(self):
-        clf = FakeClassifier()
-        result = generate_report(self.image_path, fake_report_model(), classifier=clf, threshold=0.5)
-        self.assertEqual(clf.image.mode, "RGB")
-        self.assertEqual(result.findings, ["Effusion", "Mass"])
-        self.assertIn("disease is Effusion, Mass.", result.instruction)
+    def test_default_instruction_names_no_finding(self):
+        lowered = DEFAULT_INSTRUCTION.lower()
+        self.assertNotIn("detected disease", lowered)
+        for label in NIH_LABELS:
+            self.assertNotIn(label.lower(), lowered)
+
+    def test_report_uses_default_prompt_and_serialises(self):
+        rm = fake_report_model()
+        result = generate_report(self.image_path, rm)
+        self.assertEqual(result.instruction, DEFAULT_INSTRUCTION)
+        self.assertEqual(rm.processor.calls[0][1][0]["content"][1]["text"], DEFAULT_INSTRUCTION)
         self.assertEqual(result.raw_text, "REPORT")
         self.assertFalse(result.parsed.complete)
         data = result.to_dict()
@@ -184,21 +184,16 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(data["settings"]["temperature"], 0.5)
         json.dumps(data)
 
-    def test_explicit_findings_without_classifier(self):
-        result = generate_report(self.image_path, fake_report_model(), findings="Hernia")
-        self.assertEqual((result.findings, result.predictions), (["Hernia"], []))
+    def test_legacy_prompt_still_available_for_legacy_adapters(self):
+        result = generate_report(self.image_path, fake_report_model(),
+                                 instruction=build_instruction("Hernia"))
+        self.assertIn("the detected disease is Hernia.", result.instruction)
 
-    def test_exactly_one_source_of_findings(self):
+    def test_invalid_instruction_and_missing_image(self):
         with self.assertRaises(ValueError):
-            generate_report(self.image_path, fake_report_model())
-        with self.assertRaises(ValueError):
-            generate_report(self.image_path, fake_report_model(), classifier=FakeClassifier(),
-                            findings="Mass")
-
-    def test_missing_image(self):
+            generate_report(self.image_path, fake_report_model(), instruction=" ")
         with self.assertRaises(FileNotFoundError):
-            generate_report(self.image_path.with_name("nope.png"), fake_report_model(),
-                            findings="Mass")
+            generate_report(self.image_path.with_name("nope.png"), fake_report_model())
 
 
 if __name__ == "__main__":

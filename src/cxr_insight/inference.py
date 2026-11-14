@@ -6,12 +6,18 @@ Prompt/generation flow adapted from the original experiments, which followed
 Unsloth's vision notebooks (https://github.com/unslothai/notebooks).
 """
 import re
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from .models import ReportModel, select_findings
+from .models import ReportModel
 
 DISCLAIMER = "Research prototype output. Not for diagnosis or clinical use."
+
+# Default prompt for new adapters (used by notebooks/finetune_vlm_colab.ipynb).
+# It deliberately does not name a finding: the legacy prompt injected the CNN's
+# top label, and the model then described that label instead of the image.
+DEFAULT_INSTRUCTION = ("Write a chest X-ray report for this image with FINDINGS and IMPRESSION "
+                       "sections. Be concise and do not invent findings.")
 SECTIONS = ("TECHNIQUE", "FINDINGS", "IMPRESSION")
 
 _INDENT = " " * 18
@@ -38,8 +44,8 @@ _LEGACY_LINES = (
     "Must include TECHNIQUE, FINDINGS, IMPRESSION.",
 )
 # Byte-identical to the instruction column of the legacy fine-tuning CSV
-# (including its indentation and typos). An adapter trained on that data must be
-# prompted with exactly this text; do not "clean it up" without retraining.
+# (including its indentation and typos). Kept only to prompt or audit adapters
+# trained on that legacy data; new work uses DEFAULT_INSTRUCTION.
 LEGACY_INSTRUCTION_TEMPLATE = (
     "\n" + "\n".join(_INDENT + line if line else "" for line in _LEGACY_LINES) + "\n" + " " * 14
 )
@@ -151,7 +157,6 @@ def generate_text(report_model: ReportModel, image, instruction, settings=Genera
 @dataclass
 class ReportResult:
     image: str
-    findings: list
     instruction: str
     raw_text: str
     parsed: ParsedReport
@@ -159,30 +164,19 @@ class ReportResult:
     revision: str | None
     adapter_path: str | None
     settings: GenerationSettings
-    predictions: list = field(default_factory=list)
     disclaimer: str = DISCLAIMER
 
     def to_dict(self):
         return asdict(self)
 
 
-def generate_report(image_path, report_model, classifier=None, findings=None,
-                    threshold=None, settings=GenerationSettings()):
-    """Classify (or use given findings), prompt the VLM, and parse its report.
-
-    Exactly one of ``classifier`` or ``findings`` must be given.
-    """
-    if (classifier is None) == (findings is None):
-        raise ValueError("Provide exactly one of classifier or findings")
+def generate_report(image_path, report_model, instruction=DEFAULT_INSTRUCTION,
+                    settings=GenerationSettings()):
+    """Generate and parse a report for one image."""
+    if not isinstance(instruction, str) or not instruction.strip():
+        raise ValueError("instruction must be a non-empty string")
     image = load_image(image_path)
-    predictions = []
-    if classifier is not None:
-        predictions = classifier.predict(image)
-        findings = select_findings(predictions, threshold)
-    elif isinstance(findings, str):
-        findings = [findings]
-    instruction = build_instruction(findings)
     raw = generate_text(report_model, image, instruction, settings)
-    return ReportResult(str(image_path), list(findings), instruction, raw, parse_report(raw),
+    return ReportResult(str(image_path), instruction, raw, parse_report(raw),
                         report_model.model_id, report_model.revision, report_model.adapter_path,
-                        settings, predictions)
+                        settings)

@@ -7,11 +7,15 @@ import hashlib
 import io
 import os
 import urllib.request
+import warnings
 from pathlib import Path
 
 DISCLAIMER = "Research demo — not for clinical diagnosis."
 MAX_UPLOAD_MB = 10
 MIN_SIDE = 128
+MAX_PIXELS = 36_000_000  # 6000 x 6000; clinical CXRs are typically under 4300 x 4300
+MAX_CHECKPOINT_MB = 200
+DOWNLOAD_TIMEOUT_S = 60
 
 
 class UploadError(ValueError):
@@ -27,15 +31,28 @@ def validate_upload(data, max_mb=MAX_UPLOAD_MB):
     if len(data) > max_mb * 1024 * 1024:
         raise UploadError(f"The file is larger than {max_mb} MB.")
     try:
-        with Image.open(io.BytesIO(data)) as probe:
-            probe.verify()
-        with Image.open(io.BytesIO(data)) as image:
-            if image.format not in ("PNG", "JPEG"):
-                raise UploadError("Please upload a PNG or JPEG image.")
-            if min(image.size) < MIN_SIDE:
-                raise UploadError(f"The image is too small (minimum {MIN_SIDE}px per side).")
-            return image.convert("RGB")
-    except (UnidentifiedImageError, OSError, SyntaxError) as error:
+        with warnings.catch_warnings():
+            # Pillow only warns between its limit and 2x the limit; treat it as an error.
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            with Image.open(io.BytesIO(data)) as image:  # reads the header only
+                if image.format not in ("PNG", "JPEG"):
+                    raise UploadError("Please upload a PNG or JPEG image.")
+                width, height = image.size
+                if min(width, height) < MIN_SIDE:
+                    raise UploadError(f"The image is too small (minimum {MIN_SIDE}px per side).")
+                # Checked before decoding: a tiny compressed file can expand to gigabytes.
+                if width * height > MAX_PIXELS:
+                    raise UploadError(f"The image has too many pixels (maximum {MAX_PIXELS:,}).")
+            with Image.open(io.BytesIO(data)) as probe:
+                probe.verify()
+            with Image.open(io.BytesIO(data)) as image:
+                return image.convert("RGB")
+    except (UnidentifiedImageError, OSError, SyntaxError, ValueError,
+            Image.DecompressionBombError, Image.DecompressionBombWarning) as error:
+        if isinstance(error, UploadError):
+            raise
+        if isinstance(error, (Image.DecompressionBombError, Image.DecompressionBombWarning)):
+            raise UploadError(f"The image has too many pixels (maximum {MAX_PIXELS:,}).") from error
         raise UploadError("The file could not be read as an image.") from error
 
 
@@ -87,6 +104,25 @@ def sha256_file(path):
     return digest.hexdigest()
 
 
+def download(url, dest, max_mb=MAX_CHECKPOINT_MB, timeout=DOWNLOAD_TIMEOUT_S):
+    """Stream url to dest with a timeout and a size cap; no partial file on failure."""
+    limit = max_mb * 1024 * 1024
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as response, open(dest, "wb") as out:
+            declared = response.headers.get("Content-Length")
+            if declared and int(declared) > limit:
+                raise ValueError(f"Checkpoint is larger than {max_mb} MB")
+            total = 0
+            for block in iter(lambda: response.read(1 << 20), b""):
+                total += len(block)
+                if total > limit:
+                    raise ValueError(f"Checkpoint is larger than {max_mb} MB")
+                out.write(block)
+    except BaseException:
+        Path(dest).unlink(missing_ok=True)
+        raise
+
+
 def resolve_checkpoint(path=None, url=None, sha256=None, cache_dir=None):
     """Find the classifier: a local path, or a URL downloaded once and hash-checked.
 
@@ -109,7 +145,10 @@ def resolve_checkpoint(path=None, url=None, sha256=None, cache_dir=None):
         path = cache / f"classifier-{sha256[:16]}.pt"
         if not path.is_file():
             partial = path.with_suffix(".part")
-            urllib.request.urlretrieve(url, partial)
+            download(url, partial)
+            if sha256_file(partial) != sha256.lower():
+                partial.unlink()
+                raise ValueError("Checkpoint hash mismatch; refusing to load it")
             partial.replace(path)
     else:
         return None

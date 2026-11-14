@@ -84,7 +84,8 @@ def save_classifier(path, model, thresholds, metadata):
 
 
 def load_classifier(path, map_location="cpu"):
-    checkpoint = torch.load(path, map_location=map_location, weights_only=False)
+    # weights_only=True: tensors and plain containers only, no arbitrary pickled objects.
+    checkpoint = torch.load(path, map_location=map_location, weights_only=True)
     if checkpoint.get("architecture") != "efficientnet_b0" or \
             tuple(checkpoint.get("labels", ())) != NIH_LABELS:
         raise ValueError("Checkpoint is not an EfficientNet-B0 NIH-14 classifier")

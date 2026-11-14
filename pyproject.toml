@@ -14,7 +14,6 @@ dependencies = []
 # pinned transformers==4.53.2 — record exact versions with every reported run.
 [project.optional-dependencies]
 imaging = ["numpy", "pillow"]
-classifier = ["numpy", "pillow", "tensorflow"]
 cnn = ["numpy", "pillow", "matplotlib", "torch", "torchvision"]
 vlm = ["pillow", "torch", "transformers", "unsloth"]
 demo = ["numpy", "pillow", "matplotlib", "torch", "torchvision", "streamlit"]

@@ -18,9 +18,21 @@ import torch
 from torch import nn
 
 from .cnn import CXRDataset, build_model, read_split, save_classifier
+from .config import load_cnn_config
+from .data import digest
 from .metrics import choose_thresholds, classification_report
 from .nih import NIH_LABELS
 from .runinfo import run_metadata
+
+
+def _portable(value):
+    """Stringify for metadata; paths relative to the working directory (no local prefixes)."""
+    if isinstance(value, Path):
+        try:
+            return value.resolve().relative_to(Path.cwd().resolve()).as_posix()
+        except ValueError:
+            return value.name
+    return str(value)
 
 
 def seed_everything(seed):
@@ -57,10 +69,16 @@ def train_epoch(model, loader, optimiser, scheduler, loss_fn, device, log_every=
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--splits", required=True, type=Path, help="Directory from cxr-nih-prepare")
-    parser.add_argument("--image-dir", required=True, type=Path)
-    parser.add_argument("--out", required=True, type=Path)
+    pre = argparse.ArgumentParser(add_help=False)
+    pre.add_argument("--config", type=Path, help="TOML/JSON with a [cnn] table; flags override it")
+    known, _ = pre.parse_known_args(argv)
+    config = load_cnn_config(known.config) if known.config else None
+
+    parser = argparse.ArgumentParser(description=__doc__, parents=[pre])
+    need = config is None  # paths are required unless a config supplies them
+    parser.add_argument("--splits", required=need, type=Path, help="Directory from cxr-nih-prepare")
+    parser.add_argument("--image-dir", required=need, type=Path)
+    parser.add_argument("--out", required=need, type=Path)
     parser.add_argument("--epochs", type=int, default=5)
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--lr", type=float, default=3e-4)
@@ -70,6 +88,11 @@ def main(argv=None):
     parser.add_argument("--no-pretrained", action="store_true")
     parser.add_argument("--session-epochs", type=int, default=None,
                         help="Stop after this many epochs in this session (resume later)")
+    if config is not None:
+        parser.set_defaults(splits=config.splits, image_dir=config.image_dir, out=config.out,
+                            epochs=config.epochs, batch_size=config.batch_size, lr=config.lr,
+                            weight_decay=config.weight_decay, seed=config.seed,
+                            workers=config.workers, no_pretrained=not config.pretrained)
     args = parser.parse_args(argv)
 
     seed_everything(args.seed)
@@ -126,7 +149,7 @@ def main(argv=None):
                     "scheduler": scheduler.state_dict(), "epoch": epoch + 1,
                     "best_auroc": best_auroc, "history": history, "args": vars(args) | {
                         "splits": str(args.splits), "image_dir": str(args.image_dir),
-                        "out": str(args.out)},
+                        "out": str(args.out), "config": str(args.config) if args.config else None},
                     "torch_rng": torch.get_rng_state(), "loader_rng": generator.get_state(),
                     "python_rng": random.getstate(), "numpy_rng": np.random.get_state()},
                    last.with_suffix(".tmp"))
@@ -143,7 +166,9 @@ def main(argv=None):
         "task": "multi-label (14 NIH findings; 'No Finding' = all zeros)",
         "architecture": "torchvision efficientnet_b0, ImageNet-1k weights" if not args.no_pretrained
         else "efficientnet_b0, random init",
-        "device": device, "args": {k: str(v) for k, v in vars(args).items() if k != "session_epochs"},
+        "device": device,
+        "args": {k: _portable(v) for k, v in vars(args).items() if k != "session_epochs"},
+        "config_sha256": digest(args.config) if args.config else None,
         "data": {k: data_summary.get(k) for k in ("dataset", "source", "subset", "images_used",
                                                   "seed", "data_entry_sha256", "test_list_sha256")}
         | {"split_sha256": {k: v.get("sha256") for k, v in data_summary.get("splits", {}).items()}},

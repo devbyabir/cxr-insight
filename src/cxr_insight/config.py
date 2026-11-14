@@ -35,15 +35,12 @@ class ModelConfig:
     base_model_id: str
     revision: str | None = None
     adapter_path: Path | None = None
-    image_encoder: str = "efficientnet_b0"
 
     def __post_init__(self):
         if not isinstance(self.base_model_id, str) or not self.base_model_id.strip():
             raise ValueError("model.base_model_id must be a non-empty string")
         if self.revision is not None and (not isinstance(self.revision, str) or not self.revision.strip()):
             raise ValueError("model.revision must be a non-empty string when set")
-        if not isinstance(self.image_encoder, str) or not self.image_encoder.strip():
-            raise ValueError("model.image_encoder must be a non-empty string")
 
 
 @dataclass(frozen=True)
@@ -81,6 +78,35 @@ class ExperimentConfig:
     def to_dict(self):
         """JSON-serialisable view, for saving alongside results."""
         return json.loads(json.dumps(asdict(self), default=str))
+
+
+@dataclass(frozen=True)
+class CnnConfig:
+    """Settings for ``cxr-train-cnn --config`` (table ``[cnn]``)."""
+    splits: Path
+    image_dir: Path
+    out: Path
+    epochs: int = 5
+    batch_size: int = 32
+    lr: float = 3e-4
+    weight_decay: float = 1e-4
+    seed: int = 42
+    workers: int = 2
+    pretrained: bool = True
+
+    def __post_init__(self):
+        for name in ("epochs", "batch_size"):
+            _check_int(f"cnn.{name}", getattr(self, name), minimum=1)
+        _check_int("cnn.seed", self.seed, minimum=0)
+        _check_int("cnn.workers", self.workers, minimum=0)
+        for name in ("lr", "weight_decay"):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 <= value < 1:
+                raise ValueError(f"cnn.{name} must be a number in [0, 1)")
+        if not self.lr > 0:
+            raise ValueError("cnn.lr must be > 0")
+        if not isinstance(self.pretrained, bool):
+            raise ValueError("cnn.pretrained must be true or false")
 
 
 def _check_int(name, value, minimum):
@@ -128,13 +154,25 @@ def config_from_dict(raw, base_dir="."):
     )
 
 
-def load_config(path):
+def _read(path):
     path = Path(path)
     if path.suffix == ".toml":
         with path.open("rb") as stream:
-            raw = tomllib.load(stream)
-    elif path.suffix == ".json":
-        raw = json.loads(path.read_text(encoding="utf-8"))
-    else:
-        raise ValueError("Config must be a .toml or .json file")
-    return config_from_dict(raw, base_dir=path.parent)
+            return tomllib.load(stream)
+    if path.suffix == ".json":
+        return json.loads(path.read_text(encoding="utf-8"))
+    raise ValueError("Config must be a .toml or .json file")
+
+
+def load_cnn_config(path):
+    raw = _read(path)
+    unknown = set(raw) - {"name", "cnn"}
+    if unknown:
+        raise ValueError(f"Unknown top-level key(s): {sorted(unknown)}")
+    if "cnn" not in raw:
+        raise ValueError("Missing required table: [cnn]")
+    return _build(CnnConfig, "cnn", raw["cnn"], Path(path).resolve().parent)
+
+
+def load_config(path):
+    return config_from_dict(_read(path), base_dir=Path(path).parent)

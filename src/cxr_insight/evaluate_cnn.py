@@ -31,9 +31,11 @@ def plot(report, y, s, out):
         # Legend shows the exact computed AUROC — no adjustment of any kind.
         ax.plot(fpr, tpr, lw=1.2, label=f"{row['label']} ({row['auroc']:.3f}, n+={row['support']})")
     ax.plot([0, 1], [0, 1], "k--", lw=1)
+    macro = report["macro_auroc"]
     ax.set(xlabel="False positive rate", ylabel="True positive rate",
-           title=f"Test ROC (macro AUROC {report['macro_auroc']:.3f})")
-    ax.legend(fontsize=7, loc="lower right")
+           title="Test ROC (macro AUROC " + (f"{macro:.3f})" if macro is not None else "undefined)"))
+    if macro is not None:
+        ax.legend(fontsize=7, loc="lower right")
     fig.tight_layout()
     fig.savefig(out / "roc.png", dpi=150)
     plt.close(fig)

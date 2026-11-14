@@ -1,8 +1,8 @@
-"""Model wrappers: CNN finding classifier and vision-language report model.
+"""Vision-language report model: loading trained adapters and checking them.
 
-Heavy frameworks (TensorFlow, torch, Unsloth) are imported lazily inside the
-loader functions, so this module imports — and its pure logic is testable —
-without them. Loading the report model requires a CUDA GPU (e.g. Colab).
+Unsloth/torch are imported lazily inside the loader, so this module imports
+without them. Loading a report model requires a CUDA GPU (e.g. Colab).
+The CNN classifier lives in ``cxr_insight.cnn``.
 
 The vision-language loading pattern is adapted from Unsloth's public vision
 fine-tuning notebooks (https://github.com/unslothai/notebooks), which the
@@ -11,85 +11,6 @@ upstream notebook license, before redistributing derived code.
 """
 from dataclasses import dataclass
 from pathlib import Path
-
-# Label order of the legacy EfficientNet/ResNet checkpoints (NIH ChestX-ray14
-# labels plus "No Finding"). The checkpoint's output index i maps to LABELS[i];
-# a different checkpoint needs its own label list.
-LABELS = (
-    "Atelectasis", "Cardiomegaly", "Consolidation", "Edema", "Effusion",
-    "Emphysema", "Fibrosis", "Hernia", "Infiltration", "Mass", "No Finding",
-    "Nodule", "Pleural_Thickening", "Pneumonia", "Pneumothorax",
-)
-CLASSIFIER_INPUT_SIZE = (224, 224)
-
-
-@dataclass(frozen=True)
-class Prediction:
-    label: str
-    score: float
-
-
-def rank_predictions(scores, labels=LABELS):
-    """Pair raw model outputs with labels, highest score first."""
-    scores = [float(s) for s in scores]
-    if len(scores) != len(labels):
-        raise ValueError(f"Expected {len(labels)} scores, got {len(scores)}")
-    return sorted((Prediction(l, s) for l, s in zip(labels, scores)),
-                  key=lambda p: p.score, reverse=True)
-
-
-def select_findings(predictions, threshold=None):
-    """Return the finding label(s) used to condition the report prompt.
-
-    threshold=None reproduces the legacy single-label argmax behaviour. With a
-    threshold, every label at or above it is kept (multi-label; ChestX-ray14
-    findings can coexist), falling back to the top label if none qualify.
-    "No Finding" is never combined with positive findings.
-    """
-    if not predictions:
-        raise ValueError("No predictions")
-    ranked = sorted(predictions, key=lambda p: p.score, reverse=True)
-    if threshold is None:
-        return [ranked[0].label]
-    if not 0 <= threshold <= 1:
-        raise ValueError("threshold must be in [0, 1]")
-    kept = [p.label for p in ranked if p.score >= threshold]
-    positives = [label for label in kept if label != "No Finding"]
-    return positives or kept[:1] or [ranked[0].label]
-
-
-def prepare_classifier_input(image, size=CLASSIFIER_INPUT_SIZE):
-    """RGB, resize, uint8 HWC array with a batch axis — as the legacy notebooks did.
-
-    No rescaling is applied: Keras EfficientNet models include their own
-    preprocessing layer. A checkpoint expecting normalised input differs.
-    """
-    import numpy as np
-
-    if image.mode != "RGB":
-        image = image.convert("RGB")
-    return np.expand_dims(np.asarray(image.resize(size)), 0)
-
-
-class FindingClassifier:
-    """Wraps any model exposing Keras-style ``predict(batch) -> [[scores]]``."""
-
-    def __init__(self, model, labels=LABELS, input_size=CLASSIFIER_INPUT_SIZE):
-        self.model, self.labels, self.input_size = model, tuple(labels), input_size
-
-    @classmethod
-    def from_keras(cls, path, **kwargs):
-        path = Path(path)
-        if not path.is_file():
-            raise FileNotFoundError(f"Classifier checkpoint not found: {path}")
-        from tensorflow.keras.models import load_model  # lazy: heavy dependency
-
-        return cls(load_model(path), **kwargs)
-
-    def predict(self, image):
-        batch = prepare_classifier_input(image, self.input_size)
-        output = self.model.predict(batch, verbose=0)
-        return rank_predictions(output[0], self.labels)
 
 
 @dataclass

@@ -1,3 +1,4 @@
+import hashlib
 import importlib.util
 import io
 import os
@@ -8,8 +9,8 @@ from pathlib import Path
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-from cxr_insight.demo import (DISCLAIMER, UploadError, draft_report, flagged, resolve_checkpoint,
-                              sha256_file, validate_upload)
+from cxr_insight.demo import (DISCLAIMER, MAX_PIXELS, UploadError, download, draft_report, flagged,
+                              resolve_checkpoint, sha256_file, validate_upload)
 
 HAS_IMAGING = all(importlib.util.find_spec(m) for m in ("numpy", "PIL", "matplotlib"))
 LABELS = ("Effusion", "Mass", "Pleural_Thickening")
@@ -57,6 +58,17 @@ class UploadTests(unittest.TestCase):
         with self.assertRaises(UploadError):
             validate_upload(encoded(), max_mb=0.00001)
 
+    def test_pixel_bombs_rejected_before_decoding(self):
+        # Highly compressible images whose decoded size would be huge.
+        for side in (7000, 20000):  # above our cap; the second is above Pillow's hard limit
+            with self.subTest(side=side), self.assertRaisesRegex(UploadError, "too many pixels"):
+                validate_upload(encoded(size=(side, side)), max_mb=10)
+        self.assertLess(6000 * 6000, MAX_PIXELS + 1)
+
+    def test_truncated_image_rejected(self):
+        with self.assertRaises(UploadError):
+            validate_upload(encoded()[:200])
+
     def test_overlay_matches_image_size(self):
         from PIL import Image
         from cxr_insight.demo import overlay
@@ -89,21 +101,46 @@ class CheckpointResolutionTests(unittest.TestCase):
 
     def test_url_download_cached_and_verified(self):
         with tempfile.TemporaryDirectory() as tmp:
-            src = Path(tmp) / "src.pt"
-            src.write_bytes(b"weights")
-            digest = sha256_file(src)
+            payload = b"weights"
+            digest = hashlib.sha256(payload).hexdigest()
             calls = []
 
-            def fake_retrieve(url, dest):
+            def fake_download(url, dest, **kwargs):
                 calls.append(url)
-                Path(dest).write_bytes(src.read_bytes())
+                Path(dest).write_bytes(payload)
 
-            with mock.patch("urllib.request.urlretrieve", fake_retrieve):
+            with mock.patch("cxr_insight.demo.download", fake_download):
                 first = resolve_checkpoint(url="https://example.com/c.pt", sha256=digest,
                                            cache_dir=Path(tmp) / "cache")
                 second = resolve_checkpoint(url="https://example.com/c.pt", sha256=digest,
                                             cache_dir=Path(tmp) / "cache")
-            self.assertEqual((first, len(calls)), (second, 1))
+                self.assertEqual((first, len(calls)), (second, 1))
+                with self.assertRaisesRegex(ValueError, "hash mismatch"):
+                    resolve_checkpoint(url="https://example.com/other.pt", sha256="b" * 64,
+                                       cache_dir=Path(tmp) / "cache")
+                self.assertEqual(list((Path(tmp) / "cache").glob("*.part")), [])
+
+
+class FakeResponse(io.BytesIO):
+    def __init__(self, data, declared=None):
+        super().__init__(data)
+        self.headers = {"Content-Length": str(declared)} if declared is not None else {}
+
+
+class DownloadTests(unittest.TestCase):
+    def test_streams_within_limit(self):
+        with tempfile.TemporaryDirectory() as tmp,                 mock.patch("urllib.request.urlopen", lambda url, timeout: FakeResponse(b"x" * 10)):
+            download("https://example.com/c.pt", Path(tmp) / "c.pt", max_mb=1)
+            self.assertEqual((Path(tmp) / "c.pt").read_bytes(), b"x" * 10)
+
+    def test_rejects_oversized_declared_and_streamed(self):
+        big = b"x" * (1024 * 1024 + 1)
+        for declared in (len(big), None):
+            with self.subTest(declared=declared), tempfile.TemporaryDirectory() as tmp,                     mock.patch("urllib.request.urlopen",
+                               lambda url, timeout, d=declared: FakeResponse(big, d)):
+                with self.assertRaisesRegex(ValueError, "larger than 1 MB"):
+                    download("https://example.com/c.pt", Path(tmp) / "c.pt", max_mb=1)
+                self.assertFalse((Path(tmp) / "c.pt").exists())
 
 
 if __name__ == "__main__":
